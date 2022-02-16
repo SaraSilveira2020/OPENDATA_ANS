@@ -11,11 +11,14 @@ pkg <- c("DBI","unix","odbc","tidyverse","dbplyr","data.table","installr","httr"
 install.packages(pkg[!pkg%in%rownames(installed.packages())], quiet = T) # Instalação dos pacotes
 sapply(pkg, require, character.only=T) # Chamando os pacotes para o ambiente
 
-con <- odbc::dbConnect(odbc::odbc(), driver = "/usr/lib/x86_64-linux-gnu/odbc/libmyodbc8a.so", server = "localhost",
-                       uid = "tanjiro", pwd = "charger69R$", port=3306, database = "ANS_DB", timeout = 86400) # Criando conexão com o MySQL
-
-#unix::rlimit_as(11e9, 11e9) # Limitando o uso para 12 Gb
-unix::rlimit_all() # Listando informações sobre limite
+con <- odbc::dbConnect(odbc::odbc(), 
+                       driver = "SetYourDriver", 
+                       server = "YourServer",
+                       uid = "YourUserID", 
+                       pwd = "YourPassword", 
+                       port = "YourPort",
+                       database = "YourDataBase",
+                       timeout = 86400) # Criando conexão com o MySQL
 
 #dbDisconnect(con) # Para desconectar do Banco de Dados MySQL
 
@@ -33,7 +36,7 @@ unix::rlimit_all() # Listando informações sobre limite
 # 01 - Base de beneficiarios ----
 UF <- c("XX","RR","AC","AP","AM","TO","RO","PI","SE","DF","AL","MA","PB","MS",
         "RN","PA","MT","CE","ES","GO","PE","BA","SC","RS","PR","RJ","MG","SP")
-year <- 2018
+year <- 2015
 month <- 1:12
 #
 options(timeout = max(86400, getOption("timeout")))
@@ -109,6 +112,7 @@ while(year<=year(Sys.time())){
 unlink(temp, recursive = T, force = T); rm(temp, UF, year, month, a)
 
 # 02 - Procedimentos Ambulatoriais e Hospitalares ----
+# Para selecionar todos os estados do nordeste do Brasil é só rodar a parte comentada com #
 #NE.BR <- c("SE","PI","AL","MA","PB","RN","CE","PE","BA")
 NE.BR <- "RN" ; j=1
 ano <- 2015
@@ -416,8 +420,13 @@ TUSS[[1]]
 
 dbSendQuery(con, "CREATE DATABASE IF NOT EXISTS TUSS;")
 
-con1 <- odbc::dbConnect(odbc::odbc(), driver = "/usr/lib/x86_64-linux-gnu/odbc/libmyodbc8a.so", server = "localhost",
-                        uid = "tanjiro", pwd = "charger69R$", port=3306, database = "TUSS")
+con1 <- odbc::dbConnect(odbc::odbc(), 
+                        driver = "YourDriver", 
+                        server = "YourServer",
+                        uid = "YourUserID", 
+                        pwd = "YourPassword", 
+                        port = "YourPort",
+                        database = "TUSS")
 
 for (i in 1:length(tblsTUSS)){
   dbWriteTable(con1, toupper(str_sub(tblsTUSS[[i]], 1, 9)), TUSS[[i]], overwrite = T)
@@ -524,164 +533,6 @@ for (i in 1:length(lst)){
 unlink(temp, recursive = T, force = T); unlink(tempd, recursive = T, force = T)
 rm(temp, tempd, direc, url)
 
-# 13 - Indicadores Financeiros ----
-dbSendQuery(con, "CREATE DATABASE IF NOT EXISTS INDIC_FINANC;")
-
-con2 = odbc::dbConnect(odbc::odbc(), driver = "/usr/lib/x86_64-linux-gnu/odbc/libmyodbc8a.so", 
-                        server = "localhost", uid = "tanjiro", pwd = "charger69R$", port=3306,
-                        database = "INDIC_FINANC")
-
-# VCMH ----
-url = "https://www.iess.org.br/vcmhiess"
-
-rmDr = rsDriver(browser = "firefox")$client
-rmDr$navigate(url)
-
-acc = rmDr$findElement(using = "xpath",
-                       value = "/html/body/div[1]/div/div/div[2]/button")
-acc$clickElement()
-
-element = rmDr$findElement(using = "xpath", 
-                           value = "/html/body/div[1]/div[1]/div/section/div[2]/article/div/div[2]/ul/li[2]")
-element$clickElement()
-
-element3 = rmDr$findElement(using = "xpath", value = '//*[@id="tablefield-paragraph-6541-field_campo-0"]')
-
-VCMH = element3$getPageSource()[[1]] %>% read_html() %>% html_table()
-
-VCMH = do.call(rbind, VCMH)
-
-VCMH[,1] = VCMH[,1] %>% as.data.frame() %>% extract2(1) %>% str_c("01", ., sep = "/") %>% dmy()
-
-for (i in 2:ncol(VCMH)){ # Retirando o simbolo de % e trocando vírgula por ponto e transformando em numerico absoluto (1% = 0.01)
-  VCMH[,i] = VCMH[,i] %>% as.data.frame() %>% extract2(1) %>% str_replace(., "%", "") %>% str_replace(., ",", ".") %>% as.numeric()/100
-  }
-
-VCMH = VCMH[order(VCMH[,1], decreasing = F),]
-names(VCMH) = c("COMP","CONSULTA", "EXAMES", "TERAPIA", "OSA", "INTERNACAO", "OUTROS", "TOTAL")
-
-if(!c("VCMH")%in%dbListTables(con2)){
-  
-  dbWriteTable(con2, "VCMH", VCMH)
-  print(paste0("Tabela VCMH criada com sucesso!"))
-  
-} 
-
-rm(url, VCMH, rmDr, element, element3)
-
-# IPCA (IBGE) ----
-# IPCA - Serviços de Saúde (IBGE) ----
-# IPCA - Planos de Saúde (IBGE) ----
-# INPC (IBGE) ----
-# INPC - Serviços de Saúde (IBGE) ----
-# INPC - Planos de Saúde (IBGE) ----
-# IGP - Saúde (FIPE) ----
-# IGP - M (FGV) ----
-# FIPE Saúde (FIPE) ----
-
-#################################################################################
-#                     BASES CONSOLIDADAS ATÉ AQUI: ----
-# Avaliar com Vilton se será necessário incluir essas bases: ----
-# Prestadores hospitalares: O preço do produto vai variar conforme a composição da rede prestadora,
-# ou seja, o produto X que tem os hospitais A e B tem o preço diferente do produto Y que tenha os hospitais
-# C e D, porém, se o produto X e o produto Y tiverem os hospitais A e B e o preço for muito diferente, então
-# a possível causa seja os prestadores não hospitalares (clínicas, médicos, laboratórios, etc.)
-# Beneficiários SIB tem a informação da data de nascimento e as movimentações do beneficiário,
-# provável utilização seja para separar os beneficiários em idades quinquenais a fim de se obter a estrutura
-# etária da população com cobertura assistencial.
-# Prestadores Hospitalares por Produto ----
-url = "http://ftp.dadosabertos.ans.gov.br/FTP/PDA/produtos_e_prestadores_hospitalares/produtos_e_prestadores_hospitalares.zip"
-
-tempd = tempdir(); temp = tempfile(tmpdir = tempd)
-
-options(timeout = 3600)
-download.file(url, destfile = temp, quiet = T, )
-
-direc = strsplit(url, "/") %>% extract2(1)
-
-dir.create(paste0(tempd, "/", substr(direc[length(direc)],
-                                     start = 1, 
-                                     stop = nchar(direc[length(direc)])-4))
-)
-setwd(paste0(tempd, "/", substr(direc[length(direc)],
-                                start = 1, 
-                                stop = nchar(direc[length(direc)])-4))
-)
-unzip(temp)
-
-lst <- list.files(getwd())
-
-#for (i in 1:length(lst)){
-
-#aa = lapply(lst, fread, sep = ";", header = T, encoding = "Latin-1", drop = c(1:3,5,7:14,18,25,26,29), colClasses = "character")
-#aa = do.call(rbind.data.frame, aa)
-
-a = fread(lst[i], sep = ";", header = T, encoding = "Latin-1", drop = c(1:3,5,7:14,18,25,26,29), colClasses = "character")
-
-#a %>% select(DS_CLASSIFICACAO) %>% distinct()
-
-# Armazenar os dados no SQL
-if(!c("PREST_HOSP_PROD")%in%dbListTables(con)){
-  
-  dbWriteTable(con, "PREST_HOSP_PROD", a)
-  print(paste0("Tabela PREST_HOSP_PROD criada com sucesso!"))
-  
-} else {
-  
-  dbWriteTable(con, "PREST_HOSP_PROD", a, append=T, header=F,row.names=F)
-  print(paste0("UF de ", substr(lst[i],
-                                start = nchar(lst[length(lst)])-5,
-                                stop = nchar(lst[length(lst)])-4)
-               ," incorporada com sucesso!"))
-}
-
-#a$DE_CLAS_ESTB_SAUDE = factor(a$DE_CLAS_ESTB_SAUDE, labels = c(1, 2)) #  1: Assistência Hospitalar; 2: Demais Estabelecimentos
-#a$DE_TIPO_PRESTADOR = factor(a$DE_TIPO_PRESTADOR, labels = c("C", "P")) #  C: Contratualizado; P: Próprio
-#a$DE_TIPO_CONTRATO = factor(a$DE_TIPO_CONTRATO, labels = c("D", "I", "0")) #  D: Direto; I: Indireto; 0: Não Informado
-#a$DE_DISPONIBILIDADE = factor(a$DE_DISPONIBILIDADE, labels = c("0", "P", "T")) #  0: Não Informado; P: Parcial; T: Total
-
-#}
-
-# Prestadores Não Hospitalares por Operadora ----
-url = "http://ftp.dadosabertos.ans.gov.br/FTP/PDA/operadoras_e_prestadores_nao_hospitalares/operadoras_e_prestadores_nao_hospitalares.zip"
-download.file(url[2], destfile = temp, quiet = T)
-direc = strsplit(url[2], "/") %>% extract2(1)
-
-dir.create(paste0(tempd, "/", substr(direc[length(direc)],
-                                     start = 1, 
-                                     stop = nchar(direc[length(direc)])-4))
-)
-setwd(paste0(tempd, "/", substr(direc[length(direc)],
-                                start = 1, stop = 
-                                  nchar(direc[length(direc)])-4))
-)
-unzip(temp)
-
-NT_VC = read.csv2("nt_vc.csv", header = T)
-
-# Beneficiários SIB ----
-url = c("http://ftp.dadosabertos.ans.gov.br/FTP/PDA/dados_de_beneficiarios_por_operadora/sib_ativos.zip",
-        "http://ftp.dadosabertos.ans.gov.br/FTP/PDA/dados_de_beneficiarios_por_operadora/sib_inativos.zip"
-)
-
-download.file(url[2], destfile = temp, quiet = T)
-direc = strsplit(url[2], "/") %>% extract2(1)
-
-dir.create(paste0(tempd, "/", substr(direc[length(direc)],
-                                     start = 1, 
-                                     stop = nchar(direc[length(direc)])-4))
-)
-setwd(paste0(tempd, "/", substr(direc[length(direc)],
-                                start = 1, stop = 
-                                  nchar(direc[length(direc)])-4))
-)
-unzip(temp)
-
-NT_VC = read.csv2("nt_vc.csv", header = T)
-
-# ANOTAÇÕES ----
-
-# Avaliar a possibilidade de encaixar umá anlise do custo dos procedimentos no SUS
-# em relação a Saúde Suplementar, analiar se há correlação, como está distribuido, etc.
-
+# Observações ----
+# Dados consolidados até aqui, restando apenas ajustar o código para atualizar de forma autónoma.
 
