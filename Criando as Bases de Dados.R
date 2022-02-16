@@ -22,17 +22,6 @@ con <- odbc::dbConnect(odbc::odbc(),
 
 #dbDisconnect(con) # Para desconectar do Banco de Dados MySQL
 
-# Observações ----
-# -> Bases que demoram para atualizar
-## -> Bases que podem ser atualizadas sem preocupação
-
-# Avaliar com Vilton a importância de se ter, na base de procedimentos ambulatoriais e hospitalares,
-# o código do CNPJ do prestador e o código ou id do produto para vincular ao preço do produto.
-# Isso pode ser obtido com a ANS, eles precisariam enviar uma tabela de 2014 até 2021 contendo o 
-# ID_EVENTO, CD_PLANO, CNPJ_PRESTADOR, dai as informações de plano e prestador ficariam
-# vinculados ao ID_EVENTO. Atualmente o ID_Plano disponível só tem as características do plano, porém
-# não dá para saber qual é o plano, quais UFs e Municípios ele abrange.
-
 # 01 - Base de beneficiarios ----
 UF <- c("XX","RR","AC","AP","AM","TO","RO","PI","SE","DF","AL","MA","PB","MS",
         "RN","PA","MT","CE","ES","GO","PE","BA","SC","RS","PR","RJ","MG","SP")
@@ -214,7 +203,7 @@ while(ano < format(Sys.Date(), format = "%Y")){
 
 rm(NE.BR, ano)
 
-# 03 - Caracteristica dos planos (Erro nas linhas 39412 e 70065) ----
+# 03 - Caracteristica dos planos ----
 url <- "http://ftp.dadosabertos.ans.gov.br/FTP/PDA/caracteristicas_produtos_saude_suplementar/caracteristicas_produtos_saude_suplementar.csv"
 
 carac_prod_ssp <- read.csv2(url, header = T, encoding = "latin1")
@@ -233,15 +222,6 @@ dbWriteTable(con, "TBL_IDPLAN_NMPLAN", tbl_idPLAN.nmPLAN, overwrite=T) #escreven
 rm(tbl_codOPS.nmOPS, tbl_idPLAN.nmPLAN) #removendo as tabelas da memoria do R
 
 # Manipulando a tabela de característica dos planos
-
-# Correção nas linhas 39412 e 70065:
-#carac_prod_ssp[70065,3] = paste0(carac_prod_ssp[70065,3], carac_prod_ssp[70066,1])
-
-#for (i in 4:ncol(carac_prod_ssp)){
-#  carac_prod_ssp[39412,i] = carac_prod_ssp[39413,i-2]
-#  carac_prod_ssp[70065,i] = carac_prod_ssp[70066,i-2]
-#}
-#carac_prod_ssp = carac_prod_ssp[-c(70066,39413),]
 
 carac_prod_ssp <- carac_prod_ssp %>% 
   select(!c("CD_PLANO","NM_PLANO","RAZAO_SOCIAL","CONTRATACAO","GR_SGMT_ASSISTENCIAL",
@@ -277,7 +257,7 @@ carac_prod_ssp$LIVRE_ESCOLHA <- factor(carac_prod_ssp$LIVRE_ESCOLHA) # Mudando a
 levels(carac_prod_ssp$LIVRE_ESCOLHA) <- c("1","3","4","2") # 1-Ausente; 2-Total; 3-Parc c/ int; 4-Parc s/ int
 
 carac_prod_ssp$SITUACAO_PLANO <- factor(carac_prod_ssp$SITUACAO_PLANO) # Mudando a acomodacao hospitalar
-levels(carac_prod_ssp$SITUACAO_PLANO) <- c("A","C","S","T") # A-Ativo; C-Cancelado; S-Suspenso; T-Tranferido
+levels(carac_prod_ssp$SITUACAO_PLANO) <- c("A","C","S","T") # A-Ativo; C-Cancelado; S-Suspenso; T-Transferido
 
 # Formatando as datas
 carac_prod_ssp$DT_SITUACAO <- as.Date.character(carac_prod_ssp$DT_SITUACAO, format = "%d/%m/%Y")
@@ -291,11 +271,11 @@ dbWriteTable(con, "CARAC_PROD_SSP", carac_prod_ssp, overwrite=T)
 rm(carac_prod_ssp, url)
 
 # 04 - Valor Comercial das Mensalidades ----
+url = "http://ftp.dadosabertos.ans.gov.br/FTP/PDA/nota_tecnica_ntrp_vcm_faixa_etaria/nota_tecnica_vcm_faixa_etaria.zip"
 
-rm(temp)
 tempd = tempdir(); temp = tempfile(tmpdir = tempd)
-download.file("http://ftp.dadosabertos.ans.gov.br/FTP/PDA/nota_tecnica_ntrp_vcm_faixa_etaria/nota_tecnica_vcm_faixa_etaria.zip",
-              destfile = temp, quiet = T)
+download.file(url, destfile = temp, quiet = T)
+
 vcm.FxEt <- fread(cmd=paste0("unzip -p ",temp), encoding = "Latin-1", colClasses = "character", sep=";", drop=c(1,5,10))
 vcm.FxEt <- vcm.FxEt[vcm.FxEt$ID_PLANO!="ID_PLANO"]
 vcm.FxEt$FAIXA_ETARIA <- factor(vcm.FxEt$FAIXA_ETARIA)
@@ -340,12 +320,10 @@ unlink(temp, recursive = T) ; unlink(tempd, recursive = T)
 rm(temp, tempd, a, b, ano)
 
 # 06 - Reajuste dos Planos Coletivos (RPC) ----
-mesBaixado = tbl(con, "RPC") %>% select(COMPETENCIA) %>% distinct() %>% data.frame()
 
 url <- "http://ftp.dadosabertos.ans.gov.br/FTP/PDA/RPC/"
 data <- url %>% read_html() %>% html_table(fill=T) %>% as.data.frame() %>% select("Name")
 data <- data[-c(1:2,nrow(data)-1,nrow(data)),]
-data <- data[!substr(data, 9, 14)%in%mesBaixado[,1]]
 
 tempd=tempdir(check = T) ; temp=tempfile(tmpdir = tempd)
 
@@ -392,6 +370,7 @@ head(ntrp,4)
 dbWriteTable(con, "NTRP_VING_COM", ntrp, overwrite = T)
 
 rm(url, ntrp)
+
 # 09 - Nota Técnica de Produtos (Abrangência Geográfica de Comercialização) ----
 url <- "http://ftp.dadosabertos.ans.gov.br/FTP/PDA/abrangencia_geografica_comercializacao_planos_ntrp/pda_abra_geo_comer_nrtp.csv"
 options(timeout = 6000)
